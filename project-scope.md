@@ -43,6 +43,9 @@ An AI-powered web app that analyzes a job description and a user's resume, ident
 - **Diff view of changes** — Git-style comparison of original vs. rewritten content
 - **Bullet strength rating** — each resume bullet rated weak/medium/strong with reasoning
 
+## Tech Stack
+See [Tech-Stack.md](./Tech-Stack.md)
+
 ## Out of Scope (for MVP)
 - User accounts and saved resumes
 - Version history / job tracking

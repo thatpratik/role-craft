@@ -4,10 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**role-craft** is an AI-powered resume optimizer that generates and pushes out tailored resumes.
+**role-craft** is an AI-powered resume optimizer for career switchers. It takes a job description and a resume, identifies ATS gaps, and rewrites the resume to match — without fabricating experience.
 
-The project is in its initial setup phase. No tech stack, build tooling, or source code has been committed yet.
+## Architecture
 
-## Getting Started
+Two services:
 
-No build or run commands are configured yet. Update this file once the stack is chosen and tooling is set up (scripts, linting, testing, etc.).
+**`/frontend`** — Next.js app (TypeScript)
+- UI: React + Tailwind CSS + shadcn/ui
+- AI calls: Vercel AI SDK → Groq (provider-swappable via config)
+- Session state: `localStorage` (no auth, no DB)
+- Deployment: Vercel
+
+**`/backend`** — FastAPI app (Python)
+- PDF parsing: `pdfplumber`
+- Job scraping: `Playwright` → text paste fallback
+- ATS scoring + NLP: `spaCy` + `sentence-transformers`
+- Diff generation: `diff-match-patch`
+- PDF export: `Playwright` headless
+- Deployment: Railway or Fly.io
+
+Frontend calls backend via REST API for all processing. AI rewriting and streaming happen in Next.js API routes using Vercel AI SDK.
+
+## Commands
+
+> To be filled in once project scaffolding is complete.
+
+## Key Decisions
+- AI provider is swappable — Groq is default but any Vercel AI SDK-compatible provider works
+- No user accounts — session-only, state lives in browser
+- AI only rewrites existing content — never fabricates skills or experience
+- Missing skills trigger an interactive question to the user before being flagged or added
