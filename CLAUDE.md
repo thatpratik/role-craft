@@ -16,7 +16,7 @@ Two services:
 - Session state: `localStorage` (no auth, no DB)
 - Deployment: Vercel
 
-**`/backend`** — FastAPI app (Python)
+**`/server`** — FastAPI app (Python)
 - PDF parsing: `pdfplumber`
 - Job scraping: `Playwright` → text paste fallback
 - ATS scoring + NLP: `spaCy` + `sentence-transformers`

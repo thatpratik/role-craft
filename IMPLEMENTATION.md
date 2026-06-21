@@ -2,24 +2,24 @@
 
 ## Overview
 
-Greenfield build. Monorepo with `/frontend` (Next.js + Vercel AI SDK → Groq) and `/backend` (FastAPI + uv). UI is a **single-page wizard** at `/` — state machine steps the user through the full flow.
+Greenfield build. Monorepo with `/frontend` (Next.js + Vercel AI SDK → Groq) and `/server` (FastAPI + uv). UI is a **single-page wizard** at `/` — state machine steps the user through the full flow.
 
 ---
 
 ## Phase 1 — Project Scaffolding
 
-### 1.1 Backend (`/backend`)
-- `uv init backend` → `pyproject.toml`, `.python-version`
+### 1.1 Backend (`/server`)
+- `uv init server` → `pyproject.toml`, `.python-version`
 - Dependencies: `fastapi`, `uvicorn[standard]`, `pdfplumber`, `playwright`, `spacy`, `sentence-transformers`, `diff-match-patch`, `python-multipart`
-- Entry: `backend/main.py` — FastAPI app with CORS, `/health` GET endpoint
-- `backend/routers/` — one file per domain: `resume.py`, `job.py`, `score.py`, `diff.py`, `export.py`
-- `backend/Procfile` for Railway: `web: uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Entry: `server/main.py` — FastAPI app with CORS, `/health` GET endpoint
+- `server/routers/` — one file per domain: `resume.py`, `job.py`, `score.py`, `diff.py`, `export.py`
+- `server/Procfile` for Railway: `web: uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 ### 1.2 Frontend (`/frontend`)
 - `npx create-next-app@latest frontend --typescript --tailwind --app`
 - `npx shadcn@latest init` — default style, CSS variables
 - Install: `ai`, `@ai-sdk/groq`, `react-diff-viewer-continued`, `react-dropzone`
-- `frontend/lib/api.ts` — typed fetch wrapper for all backend REST calls
+- `frontend/lib/api.ts` — typed fetch wrapper for all server REST calls
 - `frontend/lib/ai.ts` — Groq provider init (model swappable via `GROQ_MODEL` env var)
 - `/frontend/.env.local.example` — `GROQ_API_KEY`, `NEXT_PUBLIC_BACKEND_URL`
 
@@ -31,13 +31,13 @@ Greenfield build. Monorepo with `/frontend` (Next.js + Vercel AI SDK → Groq) a
 - Accepts: `multipart/form-data` with `file` (PDF or `.txt`)
 - Logic: `pdfplumber.open()` → extract text per page → join
 - Returns: `{ text: str, page_count: int }`
-- File: `backend/routers/resume.py`
+- File: `server/routers/resume.py`
 
 ### 2.2 Job Scraping — `POST /scrape-job`
 - Accepts: `{ url?: str, text?: str }`
 - Logic: if URL → Playwright `page.goto(url)` → `page.inner_text("body")` → clean whitespace; if text → pass through
 - Fallback: Playwright failure → return error prompting user to paste text
-- File: `backend/routers/job.py`
+- File: `server/routers/job.py`
 
 ### 2.3 ATS Scoring — `POST /ats-score`
 - Accepts: `{ resume_text: str, jd_text: str }`
@@ -46,19 +46,19 @@ Greenfield build. Monorepo with `/frontend` (Next.js + Vercel AI SDK → Groq) a
   - Check which keywords appear in resume (case-insensitive)
   - sentence-transformers `all-MiniLM-L6-v2` → cosine similarity of embeddings → 0–100 score
 - Returns: `{ score: int, missing_keywords: list[str], matched_keywords: list[str] }`
-- File: `backend/routers/score.py`
+- File: `server/routers/score.py`
 
 ### 2.4 Diff Generation — `POST /diff`
 - Accepts: `{ original: str, rewritten: str }`
 - Logic: `diff_match_patch` → return unified diff patches
 - Returns: `{ patches: list, html_diff: str }`
-- File: `backend/routers/diff.py`
+- File: `server/routers/diff.py`
 
 ### 2.5 PDF Export — `POST /export-pdf`
 - Accepts: `{ html: str }` — pre-rendered resume HTML
 - Logic: Playwright `page.set_content(html)` → `page.pdf()` → stream bytes
 - Returns: `application/pdf` binary response
-- File: `backend/routers/export.py`
+- File: `server/routers/export.py`
 
 ---
 
@@ -113,7 +113,7 @@ Single page at `frontend/app/page.tsx`. Step state: `'job' | 'upload' | 'analysi
 
 ### 4.2 Step 1: Job Input (`components/steps/JobInput.tsx`)
 - Tab switcher: "Paste URL" / "Paste Text"
-- URL tab: text input + "Fetch Job" button → calls backend `/scrape-job` → populates textarea
+- URL tab: text input + "Fetch Job" button → calls server `/scrape-job` → populates textarea
 - Text tab: textarea for direct paste
 - "Next" enabled when `jdText.length > 100`
 
@@ -149,7 +149,7 @@ Single page at `frontend/app/page.tsx`. Step state: `'job' | 'upload' | 'analysi
 
 ## Phase 5 — Integration & Polish
 
-- Wire `frontend/lib/api.ts` with typed functions for every backend endpoint
+- Wire `frontend/lib/api.ts` with typed functions for every server endpoint
 - Error boundaries on each step (network errors, parse failures, AI refusals)
 - Loading skeletons during async operations
 - Mobile-responsive layout (Tailwind responsive classes)
@@ -164,14 +164,14 @@ Single page at `frontend/app/page.tsx`. Step state: `'job' | 'upload' | 'analysi
 - Deploy: `vercel --prod` from `/frontend`
 
 ### 6.2 Railway (Backend)
-- `backend/Procfile` + `backend/runtime.txt` (`python-3.12`)
+- `server/Procfile` + `server/runtime.txt` (`python-3.12`)
 - Post-deploy commands: `playwright install chromium`, `python -m spacy download en_core_web_sm`
 - Env vars: `FRONTEND_URL` (for CORS allow-origin)
 
 ---
 
 ## Verification (End-to-End Test)
-1. Run both dev servers: `cd backend && uv run uvicorn main:app --reload` + `cd frontend && npm run dev`
+1. Run both dev servers: `cd server && uv run uvicorn main:app --reload` + `cd frontend && npm run dev`
 2. Paste a real job URL → confirm scrape returns JD text
 3. Upload a real PDF resume → confirm text extraction
 4. Complete full wizard: analysis → clarification → rewrite → diff view → PDF download
