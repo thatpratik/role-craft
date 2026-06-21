@@ -32,6 +32,7 @@ Greenfield build. Monorepo with `/frontend` (Next.js — pure UI) and `/server` 
 ### 2.1 Resume Parsing — `POST /parse-resume`
 - Accepts: `multipart/form-data` with `file` (PDF or `.txt`)
 - Logic: `pdfplumber.open()` → extract text per page → join
+- Validate output with Pydantic: `class ParsedResume(BaseModel): text: str; page_count: int`
 - Returns: `{ text: str, page_count: int }`
 - File: `server/routers/resume.py`
 
@@ -60,6 +61,8 @@ Greenfield build. Monorepo with `/frontend` (Next.js — pure UI) and `/server` 
 ## Phase 3 — AI Layer (FastAPI SSE Endpoints)
 
 All AI routes live in `server/routers/`. Use Groq Python SDK with `StreamingResponse` (`text/event-stream`). Model configurable via `GROQ_MODEL` env var.
+
+All prompts stored as versioned text files in `server/prompts/v1/` (e.g., `analyze.txt`, `clarify.txt`, `rewrite.txt`). Loaded at startup and injected into system messages. Changing model behavior = edit the file, no code change needed.
 
 ### 3.1 Gap Analysis — `POST /analyze`
 - Input: `{ jd_text: str, resume_text: str, ats_result: dict }`
@@ -175,9 +178,11 @@ Single page at `frontend/app/page.tsx`. Step state: `'job' | 'upload' | 'analysi
 - User accounts + saved resumes (PostgreSQL + auth)
 - Job application tracker
 - Async job queue (pgboss) for heavy processing
+- Skill normalization layer (synonym dictionary + embeddings)
+- Observability — structured logging + pipeline tracing (OpenTelemetry)
+- Caching layer for embeddings and parsed resumes
 - Skill graph visualization
 - Recruiter lens / "why this change matters" annotations
-- Caching layer for embeddings and parsed resumes
 
 ---
 
