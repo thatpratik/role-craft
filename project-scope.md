@@ -51,3 +51,11 @@ See [Tech-Stack.md](./Tech-Stack.md)
 - Version history / job tracking
 - Skill graph visualization
 - Recruiter lens / "why this change matters" annotations
+
+## Future Scope
+- **User accounts** — sign up / log in (OAuth or email), save optimized resumes, track applications
+- Version history — see all past rewrites for a job
+- Job application tracker — status board per application
+- Skill graph visualization
+- Recruiter lens / "why this change matters" annotations
+- PDF export (Playwright headless)
