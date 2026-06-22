@@ -36,11 +36,24 @@ uv add fastapi "uvicorn[standard]" python-multipart pdfplumber playwright httpx 
 
 `server/main.py`
 ```python
+import logging
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
-app = FastAPI()
+from config import load_prompts, load_models
+
+logging.basicConfig(level=logging.INFO)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_prompts()
+    load_models(app)
+    yield
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "*")],
@@ -72,7 +85,17 @@ python-3.12
 
 `server/routers/__init__.py` — empty file
 
-**Verify:** `uv run uvicorn main:app --reload` → `curl localhost:8000/health` returns `{"status":"ok"}`
+`server/.gitignore`
+```
+__pycache__/
+*.pyc
+.env
+.venv/
+*.egg-info/
+dist/
+```
+
+**Verify:** `uv run uvicorn main:app --reload` → `curl localhost:8000/health` returns `{"status":"ok"}` with no `DeprecationWarning` in logs
 
 ---
 
@@ -93,6 +116,18 @@ class ParsedResume(BaseModel):
 - If `.txt` → `file.read().decode("utf-8")`
 - Raise `HTTPException(400)` for unsupported types or empty extracted text
 - Return `ParsedResume(text=..., page_count=...)`
+
+**Router setup:**
+```python
+router = APIRouter(prefix="/parse-resume", tags=["resume"])
+
+@router.post("", response_model=ParsedResume)
+async def parse_resume(file: UploadFile = File(...)):
+    ...
+```
+
+- `.txt` branch: `contents = await file.read()` (UploadFile.read() is a coroutine)
+- `.pdf` branch: pass `file.file` (the underlying sync file object) to `pdfplumber.open()`
 
 **Wire into `main.py`:**
 ```python
@@ -115,10 +150,27 @@ class JobRequest(BaseModel):
     text: str | None = None
 ```
 
+**Router setup:**
+```python
+router = APIRouter(prefix="/scrape-job", tags=["job"])
+
+@router.post("", response_model=dict)
+async def scrape_job(req: JobRequest):
+    ...
+```
+
 **Logic (in order):**
 1. If `text` provided → return `{"text": text}` immediately
-2. Try `httpx.get(url, timeout=10, follow_redirects=True)` → strip HTML tags with regex
-3. On failure or JS-rendered page → `async_playwright()` → `browser.new_page()` → `page.goto(url)` → `page.inner_text("body")`
+2. Try `httpx.get(url, timeout=10, follow_redirects=True)` → extract text with stdlib `html.parser` (`HTMLParser` subclass), not regex — regex breaks on nested tags, CDATA, and encoded entities
+3. On failure or JS-rendered page → use `async_playwright()` (endpoint is `async def`):
+   ```python
+   async with async_playwright() as p:
+       browser = await p.chromium.launch()
+       page = await browser.new_page()
+       await page.goto(url, timeout=15000)
+       text = await page.inner_text("body")
+       await browser.close()
+   ```
 4. Both fail → `HTTPException(422, "Could not fetch job. Please paste the text directly.")`
 
 **Post-install step (add to Railway post-deploy):**
@@ -146,17 +198,27 @@ class ScoreResult(BaseModel):
     missing_keywords: list[str]
 ```
 
-**Scoring (weighted sum):**
+**Router setup:**
+```python
+router = APIRouter(prefix="/ats-score", tags=["score"])
+
+@router.post("", response_model=ScoreResult)
+async def ats_score(req: ScoreRequest, request: Request):
+    nlp = request.app.state.nlp
+    embedder = request.app.state.embedder
+    result = await run_in_threadpool(compute_score, req.resume_text, req.jd_text, nlp, embedder)
+    return result
+```
+
+**Scoring (weighted sum) — implement as plain `def compute_score(...)` called via `run_in_threadpool`:**
 - **40% keyword match** — spaCy `en_core_web_sm`: extract noun chunks + named entities from JD; check presence in resume (case-insensitive)
 - **30% semantic similarity** — `sentence-transformers` `all-MiniLM-L6-v2`: cosine similarity of full-doc embeddings
 - **20% experience relevance** — regex match job titles and year patterns in both texts; compute overlap ratio
 - **10% formatting heuristics** — regex check for section headers (`SKILLS`, `EXPERIENCE`, `EDUCATION`) in resume
 
-**Load models at module level (not per-request):**
-```python
-nlp = spacy.load("en_core_web_sm")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-```
+spaCy and sentence-transformers are CPU-bound sync calls. Running them directly in an `async def` endpoint blocks the Uvicorn event loop. Wrapping with `run_in_threadpool` (from `starlette.concurrency`) offloads to a thread — no extra dependency.
+
+**Models are loaded in `lifespan` (see Phase 1), not at module level.** Module-level loading adds cost to every import and every `--reload` cycle.
 
 **Post-install step (add to Railway post-deploy):**
 ```bash
@@ -190,19 +252,26 @@ Three plain-text files — loaded once at startup, injected as system messages. 
 - Strengthen weak bullets using JD vocabulary
 - Mark unresolved gaps with `[GAP: skill_name]` — never fabricate experience
 
-**Load pattern — add to `server/main.py`:**
+**Create `server/config.py`** (do not put this in `main.py` — routers must import from here, not from `main`, to avoid circular imports):
+
 ```python
 from pathlib import Path
+from fastapi import FastAPI
+import spacy
+from sentence_transformers import SentenceTransformer
 
 PROMPTS: dict[str, str] = {}
 
-@app.on_event("startup")
-def load_prompts():
+def load_prompts() -> None:
     for name in ["analyze", "clarify", "rewrite"]:
         PROMPTS[name] = Path(f"prompts/v1/{name}.txt").read_text()
+
+def load_models(app: FastAPI) -> None:
+    app.state.nlp = spacy.load("en_core_web_sm")
+    app.state.embedder = SentenceTransformer("all-MiniLM-L6-v2")
 ```
 
-Export `PROMPTS` from `main.py`; import it in each AI router.
+`main.py` calls `load_prompts()` and `load_models(app)` in the `lifespan` handler (see Phase 1). AI routers import `PROMPTS` from `config`, and receive `nlp`/`embedder` via `request.app.state`.
 
 ---
 
@@ -222,7 +291,8 @@ def stream_groq(messages: list[dict]) -> StreamingResponse:
     def generate():
         with client.chat.completions.stream(model=MODEL, messages=messages) as stream:
             for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
+                # choices can be empty on finish-reason chunks — guard to avoid IndexError
+                delta = chunk.choices[0].delta.content if chunk.choices else ""
                 if delta:
                     yield f"data: {delta}\n\n"
         yield "data: [DONE]\n\n"
@@ -245,8 +315,12 @@ class AnalyzeRequest(BaseModel):
     ats_result: dict
 ```
 
+**Router setup:** `router = APIRouter(prefix="/analyze", tags=["ai"])`
+
 **Logic:**
 ```python
+from config import PROMPTS  # not from main
+
 messages = [
     {"role": "system", "content": PROMPTS["analyze"]},
     {"role": "user", "content": f"JD:\n{jd_text}\n\nRESUME:\n{resume_text}\n\nATS RESULT:\n{ats_result}"},
@@ -269,8 +343,12 @@ class ClarifyRequest(BaseModel):
     missing_skills: list[str]
 ```
 
+**Router setup:** `router = APIRouter(prefix="/clarify", tags=["ai"])`
+
 **Logic:**
 ```python
+from config import PROMPTS  # not from main
+
 system = PROMPTS["clarify"] + f"\n\nMissing skills to resolve: {missing_skills}"
 full_messages = [{"role": "system", "content": system}] + messages
 return stream_groq(full_messages)
@@ -293,8 +371,12 @@ class RewriteRequest(BaseModel):
     analysis_summary: str
 ```
 
+**Router setup:** `router = APIRouter(prefix="/rewrite", tags=["ai"])`
+
 **Logic:**
 ```python
+from config import PROMPTS  # not from main
+
 user_content = (
     f"RESUME:\n{resume_text}\n\n"
     f"JD:\n{jd_text}\n\n"
