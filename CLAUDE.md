@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Two services:
 
-**`/frontend`** — Next.js app (TypeScript)
+**`/client`** — Next.js app (TypeScript)
 - UI: React + Tailwind CSS + shadcn/ui
 - Diff view: `react-diff-viewer-continued` (client-side, no server round-trip)
 - Session state: `localStorage` (no auth, no DB)
@@ -23,7 +23,7 @@ Two services:
 - AI orchestration: Groq Python SDK + SSE streaming (`/analyze`, `/clarify`, `/rewrite`)
 - Deployment: Railway or Fly.io
 
-Frontend calls server via REST API for all processing. AI streaming happens in FastAPI using the Groq Python SDK via `StreamingResponse`.
+Client calls server via REST API for all processing. AI streaming happens in FastAPI using the Groq Python SDK via `StreamingResponse`.
 
 ## Commands
 

@@ -2,17 +2,17 @@
 
 ## Overview
 
-Greenfield build. Monorepo with `/frontend` (Next.js — pure UI) and `/server` (FastAPI + uv — all processing + AI). UI is a **single-page wizard** at `/` — state machine steps the user through the full flow.
+Greenfield build. Monorepo with `/client` (Next.js — pure UI) and `/server` (FastAPI + uv — all processing + AI). UI is a **single-page wizard** at `/` — state machine steps the user through the full flow.
 
 **MVP scope:** Core wizard flow end-to-end. Text file export only (no PDF). No user accounts. No version history.
 
-**Current state:** `/server` is empty; `/frontend` does not exist yet.
+**Current state:** `/server` is empty; `/client` does not exist yet.
 
 ---
 
 ## Implementation Order
 
-Complete phases 1–9 (full server) before starting 10–18 (frontend). Each phase has a verification step — do not advance until it passes.
+Complete phases 1–9 (full server) before starting 10–18 (client). Each phase has a verification step — do not advance until it passes.
 
 ---
 
@@ -312,18 +312,18 @@ return stream_groq(messages)
 
 ---
 
-## Phase 10 — Frontend Scaffold
+## Phase 10 — Client Scaffold
 
 **Commands (run from repo root):**
 ```bash
-npx create-next-app@latest frontend --typescript --tailwind --app --no-src-dir --import-alias "@/*"
-cd frontend
+npx create-next-app@latest client --typescript --tailwind --app --no-src-dir --import-alias "@/*"
+cd client
 npx shadcn@latest init          # Default style, CSS variables: yes
 npx shadcn@latest add card button badge textarea input tabs skeleton
 npm install react-diff-viewer-continued react-dropzone
 ```
 
-**Create:** `frontend/.env.local.example`
+**Create:** `client/.env.local.example`
 ```
 NEXT_PUBLIC_SERVER_URL=http://localhost:8000
 ```
@@ -334,7 +334,7 @@ NEXT_PUBLIC_SERVER_URL=http://localhost:8000
 
 ## Phase 11 — Types + API Client
 
-**File:** `frontend/lib/types.ts`
+**File:** `client/lib/types.ts`
 ```ts
 export type Step = 'job' | 'upload' | 'analysis' | 'review' | 'export'
 export type Message = { role: 'user' | 'assistant'; content: string }
@@ -357,7 +357,7 @@ export type AppState = {
 }
 ```
 
-**File:** `frontend/lib/api.ts`
+**File:** `client/lib/api.ts`
 
 Typed functions — each throws on non-2xx response:
 ```ts
@@ -403,7 +403,7 @@ async function* streamSSE(url: string, body: object): AsyncGenerator<string> {
 
 ## Phase 12 — Global State (localStorage-synced)
 
-**File:** `frontend/lib/store.ts`
+**File:** `client/lib/store.ts`
 
 ```ts
 import { useState, useEffect } from 'react'
@@ -444,7 +444,7 @@ export function useAppState() {
 
 ## Phase 13 — Wizard Shell + Step Indicator
 
-**File:** `frontend/app/layout.tsx` — minimal wrapper with Inter font:
+**File:** `client/app/layout.tsx` — minimal wrapper with Inter font:
 ```tsx
 import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
@@ -453,12 +453,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-**File:** `frontend/components/StepIndicator.tsx`
+**File:** `client/components/StepIndicator.tsx`
 - Props: `currentStep: Step`
 - Renders 5 labeled steps: Job → Upload → Analysis → Review → Export
 - Active step: filled circle; completed: checkmark icon; future: muted/gray
 
-**File:** `frontend/app/page.tsx`
+**File:** `client/app/page.tsx`
 ```tsx
 'use client'
 import { useState } from 'react'
@@ -494,7 +494,7 @@ export default function Page() {
 
 ## Phase 14 — Step 1: Job Input
 
-**File:** `frontend/components/steps/JobInput.tsx`
+**File:** `client/components/steps/JobInput.tsx`
 
 **Props:** `{ state, setState, onNext }`
 
@@ -511,7 +511,7 @@ export default function Page() {
 
 ## Phase 15 — Step 2: Resume Upload
 
-**File:** `frontend/components/steps/ResumeUpload.tsx`
+**File:** `client/components/steps/ResumeUpload.tsx`
 
 **Props:** `{ state, setState, onBack, onNext }`
 
@@ -530,7 +530,7 @@ export default function Page() {
 
 ## Phase 16 — Step 3: Gap Analysis + Clarification
 
-**File:** `frontend/components/steps/GapAnalysis.tsx`
+**File:** `client/components/steps/GapAnalysis.tsx`
 
 **Props:** `{ state, setState, onNext }`
 
@@ -560,7 +560,7 @@ export default function Page() {
 
 ## Phase 17 — Step 4: Diff Review + Edit
 
-**File:** `frontend/components/steps/DiffReview.tsx`
+**File:** `client/components/steps/DiffReview.tsx`
 
 **Props:** `{ state, setState, onNext }`
 
@@ -580,7 +580,7 @@ export default function Page() {
 
 ## Phase 18 — Step 5: Export
 
-**File:** `frontend/components/steps/Export.tsx`
+**File:** `client/components/steps/Export.tsx`
 
 **Props:** `{ state, onReset }`
 
@@ -624,9 +624,9 @@ export default function Page() {
 
 ## Phase 20 — Deployment
 
-**Frontend (Vercel):**
+**Client (Vercel):**
 - Set env var `NEXT_PUBLIC_SERVER_URL` in Vercel dashboard (value: Railway URL)
-- Deploy: `vercel --prod` from `/frontend`
+- Deploy: `vercel --prod` from `/client`
 
 **Server (Railway):**
 - Connect repo; set root directory to `/server`
@@ -640,7 +640,7 @@ export default function Page() {
 ```
 ## Commands
 cd server && uv run uvicorn main:app --reload   # API at :8000
-cd frontend && npm run dev                        # UI at :3000
+cd client && npm run dev                        # UI at :3000
 ```
 
 ---
